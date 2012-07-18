@@ -131,7 +131,7 @@ config.configFile(process.argv[2], function (config, oldConfig) {
           } else if (fields[1].trim() == "g") {
             if (fields[2]){
               // we're doing an increment or decrement of the gauge
-              rc[fields[2] + 'by'](['statsd:'+key,fields[1]],function(err,res){
+              rc[fields[2] + 'by'](['statsd:'+key,fields[0]],function(err,res){
                 gauges[key] = Number(res || 0);
               })
             }else{
