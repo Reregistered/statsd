@@ -14,6 +14,7 @@ var counters = {
 var timers = {
   "statsd.packet_process_time": []
 };
+var rc = null;
 var gauges = {};
 var pctThreshold = null;
 var debugInt, flushInterval, keyFlushInt, server, mgmtServer;
@@ -128,7 +129,14 @@ config.configFile(process.argv[2], function (config, oldConfig) {
             }
             timers[key].push(Number(fields[0] || 0));
           } else if (fields[1].trim() == "g") {
-            gauges[key] = Number(fields[0] || 0);
+            if (fields[2]){
+              // we're doing an increment or decrement of the gauge
+              rc[fields[2] + 'by'](['statsd:'+key,fields[1]],function(err,res){
+                gauges[key] = Number(res || 0);
+              })
+            }else{
+              gauges[key] = Number(fields[0] || 0);
+            }
           } else {
             if (fields[2] && fields[2].match(/^@([\d\.]+)/)) {
               sampleRate = Number(fields[2].match(/^@([\d\.]+)/)[1]);
@@ -271,6 +279,17 @@ config.configFile(process.argv[2], function (config, oldConfig) {
       loadBackend(config, './backends/graphite');
     }
 
+    if (config.redis){
+      ////////////////////////////
+      // setup the redis connection.
+      var Redis = require('redis');
+
+      var db = Redis.createClient(config.redis.port, config.redis.host);
+      db.on("connect", function(err,res){
+        rc = db;
+      });
+    }
+
     // Setup the flush timer
     var flushInt = setInterval(flushMetrics, flushInterval);
 
@@ -304,9 +323,5 @@ config.configFile(process.argv[2], function (config, oldConfig) {
         keyCounter = {};
       }, keyFlushInterval);
     }
-
-
-  ;
-
   }
 })

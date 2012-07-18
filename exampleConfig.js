@@ -39,9 +39,17 @@ Optional Variables:
     prettyprint:    whether to prettyprint the console backend
                     output [true or false, default: true]
 
-*/
+  redis:
+    port:           port of the redis server to use for counting gauge
+    host:           host IP of the redis server to use for the counting gauge feature
+
+ */
 {
   graphitePort: 2003
-, graphiteHost: "graphite.host.com"
+, graphiteHost: '127.0.0.1'
 , port: 8125
+  redis:{
+    host:'127.0.0.1'
+,   port:6379
+  }
 }
