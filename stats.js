@@ -21,6 +21,8 @@ var debugInt, flushInterval, keyFlushInt, server, mgmtServer;
 var startup_time = Math.round(new Date().getTime() / 1000);
 var backendEvents = new events.EventEmitter();
 
+var keyFlushInterval = 0;
+
 // Load and init the backend from the backends/ directory.
 function loadBackend(config, name) {
   var backendmod = require(name);
@@ -34,7 +36,25 @@ function loadBackend(config, name) {
     util.log("Failed to load backend: " + name);
     process.exit(1);
   }
-};
+}
+
+// Load and init the backend from the backends/ directory.
+function loadTunnel(config) {
+
+  var name = config.tunnel.name;
+
+  var tunnelmod = require(config.tunnel.name);
+
+  if (config.debug) {
+    util.log("Loading tunnel: " + name);
+  }
+
+  var ret = tunnelmod.init(config, onMessage);
+  if (!ret) {
+    util.log("Failed to load backend: " + name);
+    process.exit(1);
+  }
+}
 
 // Flush metrics to each backend.
 function flushMetrics() {
@@ -45,7 +65,7 @@ function flushMetrics() {
     gauges: gauges,
     timers: timers,
     pctThreshold: pctThreshold
-  }
+  };
 
   // After all listeners, reset the stats
   backendEvents.once('flush', function clear_metrics(ts, metrics) {
@@ -71,6 +91,68 @@ var stats = {
   }
 };
 
+
+function onMessage(msg,rinfo){
+  counters["statsd.packets_received"]++;
+  var metrics = msg.toString().split("\n");
+
+  for (midx in metrics) {
+    if (config.dumpMessages) { util.log(metrics[midx].toString()); }
+    var bits = metrics[midx].toString().split(':');
+    var key = bits.shift()
+      .replace(/\s+/g, '_')
+      .replace(/\//g, '-')
+      .replace(/[^a-zA-Z_\-0-9\.]/g, '');
+
+    if (keyFlushInterval > 0) {
+      if (! keyCounter[key]) {
+        keyCounter[key] = 0;
+      }
+      keyCounter[key] += 1;
+    }
+
+    if (bits.length == 0) {
+      bits.push("1");
+    }
+
+    for (var i = 0; i < bits.length; i++) {
+      var sampleRate = 1;
+      var fields = bits[i].split("|");
+      if (fields[1] === undefined) {
+        util.log('Bad line: ' + fields);
+        counters["statsd.bad_lines_seen"]++;
+        stats['messages']['bad_lines_seen']++;
+        continue;
+      }
+      if (fields[1].trim() == "ms") {
+        if (! timers[key]) {
+          timers[key] = [];
+        }
+        timers[key].push(Number(fields[0] || 0));
+      } else if (fields[1].trim() == "g") {
+        if (fields[2]){
+          // we're doing an increment or decrement of the gauge
+          rc[fields[2] + 'by'](['statsd:'+key,fields[0]],function(err,res){
+            gauges[key] = Number(res || 0);
+          })
+        }else{
+          gauges[key] = Number(fields[0] || 0);
+        }
+      } else {
+        if (fields[2] && fields[2].match(/^@([\d\.]+)/)) {
+          sampleRate = Number(fields[2].match(/^@([\d\.]+)/)[1]);
+        }
+        if (! counters[key]) {
+          counters[key] = 0;
+        }
+        counters[key] += Number(fields[0] || 1) * (1 / sampleRate);
+      }
+    }
+  }
+
+  stats['messages']['last_msg_seen'] = Math.round(new Date().getTime() / 1000);
+}
+
 config.configFile(process.argv[2], function (config, oldConfig) {
   if (! config.debug && debugInt) {
     clearInterval(debugInt);
@@ -89,68 +171,9 @@ config.configFile(process.argv[2], function (config, oldConfig) {
   if (server === undefined) {
 
     // key counting
-    var keyFlushInterval = Number((config.keyFlush && config.keyFlush.interval) || 0);
+    keyFlushInterval = Number((config.keyFlush && config.keyFlush.interval) || 0);
 
-    server = dgram.createSocket('udp4', function (msg, rinfo) {
-      counters["statsd.packets_received"]++;
-      var metrics = msg.toString().split("\n");
-
-      for (midx in metrics) {
-        if (config.dumpMessages) { util.log(metrics[midx].toString()); }
-        var bits = metrics[midx].toString().split(':');
-        var key = bits.shift()
-                      .replace(/\s+/g, '_')
-                      .replace(/\//g, '-')
-                      .replace(/[^a-zA-Z_\-0-9\.]/g, '');
-
-        if (keyFlushInterval > 0) {
-          if (! keyCounter[key]) {
-            keyCounter[key] = 0;
-          }
-          keyCounter[key] += 1;
-        }
-
-        if (bits.length == 0) {
-          bits.push("1");
-        }
-
-        for (var i = 0; i < bits.length; i++) {
-          var sampleRate = 1;
-          var fields = bits[i].split("|");
-          if (fields[1] === undefined) {
-              util.log('Bad line: ' + fields);
-              counters["statsd.bad_lines_seen"]++;
-              stats['messages']['bad_lines_seen']++;
-              continue;
-          }
-          if (fields[1].trim() == "ms") {
-            if (! timers[key]) {
-              timers[key] = [];
-            }
-            timers[key].push(Number(fields[0] || 0));
-          } else if (fields[1].trim() == "g") {
-            if (fields[2]){
-              // we're doing an increment or decrement of the gauge
-              rc[fields[2] + 'by'](['statsd:'+key,fields[0]],function(err,res){
-                gauges[key] = Number(res || 0);
-              })
-            }else{
-              gauges[key] = Number(fields[0] || 0);
-            }
-          } else {
-            if (fields[2] && fields[2].match(/^@([\d\.]+)/)) {
-              sampleRate = Number(fields[2].match(/^@([\d\.]+)/)[1]);
-            }
-            if (! counters[key]) {
-              counters[key] = 0;
-            }
-            counters[key] += Number(fields[0] || 1) * (1 / sampleRate);
-          }
-        }
-      }
-
-      stats['messages']['last_msg_seen'] = Math.round(new Date().getTime() / 1000);
-    });
+    server = dgram.createSocket('udp4', onMessage );
 
     mgmtServer = net.createServer(function(stream) {
       stream.setEncoding('ascii');
@@ -277,6 +300,11 @@ config.configFile(process.argv[2], function (config, oldConfig) {
     } else {
       // The default backend is graphite
       loadBackend(config, './backends/graphite');
+    }
+
+    if (config.tunnel) {
+      // The default backend is graphite
+      loadTunnel(config);
     }
 
     if (config.redis){

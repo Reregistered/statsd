@@ -43,13 +43,24 @@ Optional Variables:
     port:           port of the redis server to use for counting gauge
     host:           host IP of the redis server to use for the counting gauge feature
 
+  tunnel:           Allows receiving values over a tunnel. Currently only redis is supported
+    type:           'redis'
+    port:
+    host:
+
  */
 {
-  graphitePort: 2003
+  backends:['./backends/console.js']
+, graphitePort: 2003
 , graphiteHost: '127.0.0.1'
 , port: 8125
-  redis:{
+, redis:{
     host:'127.0.0.1'
+,   port:6379
+  }
+, tunnel:{
+    name: './tunnels/redis.js'
+,   host: '127.0.0.1'
 ,   port:6379
   }
 }
