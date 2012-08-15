@@ -50,7 +50,8 @@ Optional Variables:
 
  */
 {
- graphitePort: 2003
+  backends:['console']
+, graphitePort: 2003
 , graphiteHost: '127.0.0.1'
 , port: 8125
 , redis:{

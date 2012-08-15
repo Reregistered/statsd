@@ -1,6 +1,7 @@
 var dgram  = require('dgram')
-  , util    = require('util')
+  , util   = require('util')
   , net    = require('net')
+  , path   = require('path')
   , config = require('./config')
   , fs     = require('fs')
   , events = require('events')
@@ -295,7 +296,7 @@ config.configFile(process.argv[2], function (config, oldConfig) {
 
     if (config.backends) {
       for (var i = 0; i < config.backends.length; i++) {
-        loadBackend(config, config.backends[i]);
+        loadBackend(config, path.join(__dirname,'backends',config.backends[i]));
       }
     } else {
       // The default backend is graphite
@@ -303,7 +304,7 @@ config.configFile(process.argv[2], function (config, oldConfig) {
     }
 
     if (config.tunnel) {
-      // The default backend is graphite
+      // The default tunnel is redis
       loadTunnel(config);
     }
 
